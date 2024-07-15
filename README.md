@@ -1,2 +1,2 @@
 # Ugar
-this is a work in progress fork of pinka
+Based on (Pinka)[https://github.com/bytezeroseven/pinka]

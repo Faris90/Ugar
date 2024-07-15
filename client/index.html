@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pinka.io</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="mobileUI">
+        <div id="split">
+        </div>
+        <div id="eject">
+        </div>
+    </div>
+    <div id="chatArea">
+        <ul id="chatBox">
+            <li class="game">Welcome to Pinka.IO!</li> 
+        </ul>
+        <input type="text" id="msgInput">
+    </div>
+    <div id="overlay">
+        <div id="mainContainer">
+            <div class="container">
+                <p>Advertisement</p>
+            </div>
+            <div class="container" id="main">
+                <h2>Hello!</h2>
+                <p>Type a nick below or leave it empty.</p>
+                <input type="text" id="nickInput" placeholder="Nick" maxlength="14">
+				
+                <input type="text" id="skinInput" placeholder="Skin" maxlength="14">
+                <div id="buttons">
+                    <button id="playButton">Play</button>
+                    <button id="settingsButton">Settings</button>
+                </div>
+                <div id="settings">
+                    <select id="gamemodes">
+                        <option value="ffa">FFA</option>
+                        <option value="instant">Instant</option>
+                    </select>
+                    <input checked type="checkbox" name="skin">Show skins
+                    <input checked type="checkbox" name="chatbox">Show chatbox
+                    <input checked type="checkbox" name="mass">Show mass
+                </div>
+                <center>
+                    <p>spacebar for split<br>w for eject</p>
+                </center>
+            </div>
+            <div class="container">
+                <center>
+                    <h2>Changelog</h2>
+                    <p>New UI<br>Mass decay<br>Chat box<br>Settings<br>
+                    Spikes on viruses<br>Spawn change<br>**Touch controls
+                    <br>**Working on gamemodes</p>
+                </center>
+            </div>
+        </div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="skins.js"></script>
+    <script>
+	
+        var socket = io();
+
+        var settingsButton = document.getElementById("settingsButton");
+        var settingsOff = true;
+        var settingsDiv = document.getElementById("settings");
+        settingsButton.onclick = function() {
+            if(settingsOff) {
+                settingsOff = false;
+                settingsDiv.style.display = "block";
+            } else {
+                settingsOff = true;
+                settingsDiv.style.display = "none";
+            }
+        };
+
+        var settings = {
+            skin: true,
+            chatbox: true,
+            name: true,
+        };
+        function initSettings() {
+            var boxes = document.querySelectorAll("input[type='checkbox']");
+            boxes.forEach(function(box) {
+                var value = box.checked;
+                settings[box.name] = value;
+            });
+
+            if(settings.chatbox) {
+                chatArea.style.display = "block";
+            } else {
+                chatArea.style.display = "none";
+            }
+        };
+
+        var playButton = document.getElementById("playButton");
+        var nickInput = document.getElementById("nickInput");
+        var skinInput = document.getElementById("skinInput");
+        var chatArea = document.getElementById("chatArea");
+
+        var menuHidden = true;
+
+        var overlay = document.getElementById("overlay");
+        var gamemodes = document.getElementById("gamemodes");
+        playButton.onclick = function() {
+            initSettings();
+            menuHidden = true;
+
+            var selectedMode = gamemodes.options[gamemodes.selectedIndex].value;
+
+            var d = [ selectedMode, nickInput.value, skinInput.value];
+            overlay.style.display = "none";
+            socket.emit("join game", d);
+        };
+
+        var canvas = document.getElementById("gameCanvas");
+
+        var width = innerWidth;
+        var height = innerHeight;
+        canvas.height = height;
+        canvas.width = width;
+
+        var ctx = canvas.getContext("2d");
+        ctx.imageSmoothingQuality = "high";
+
+        var data = [ width, height ];
+        socket.emit("width and height", data);
+
+        var chatBox = document.getElementById("chatBox");
+        var msgInput = document.getElementById("msgInput");
+        msgInput.onkeydown = function(e) {
+            var key = e.keyCode;
+            var msg = this.value.trim();
+            if(key == 13 && msg != "" && settings.chatbox) {
+                socket.emit("msg", msg);
+                this.value = "";
+            }
+        };
+
+        socket.on("msg", function(arr) {
+            chatBox.innerHTML += `
+            <li class="${ arr[0] }">
+                <span class="nick">${ arr[1] }</span> ${ arr[2] }
+            </li>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        var pressed = false;
+        var joined = false;
+
+        function toggleMenu() {
+            if(!joined) {
+                return;
+            }
+
+            initSettings();
+            if(menuHidden) {
+                menuHidden = false;
+                overlay.style.display = "block";
+            } else {
+                menuHidden = true;
+                overlay.style.display = "none";
+            }
+        };
+        window.addEventListener("keydown", function(e) {
+            var key = e.keyCode;
+
+            var target = e.target;
+            if(target == msgInput) {
+                if(key == 13) {
+                    msgInput.blur();
+                }
+                return;
+            }
+            if(key == 13) {
+                msgInput.focus();
+                return;
+            }
+
+            if(key == 27) {
+                toggleMenu();
+            }
+
+            if(!pressed) {
+                pressed = true;
+            } else {
+                return;
+            }
+
+            socket.emit("input keydown", key);
+        });
+        window.addEventListener("keyup", function(e) {
+            var key = e.keyCode;
+            pressed = false;
+            socket.emit("input keyup", key);
+        });
+
+        canvas.addEventListener("mousemove", function(e) {
+            var data = [ e.clientX, e.clientY ];
+            socket.emit("input mouse", data);
+        });
+
+        function drawNode(node) {
+            var r = node.size;
+
+            ctx.save();
+            ctx.translate(node.x, node.y);
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.closePath();
+
+            if(node.isAgitated) {
+                var n = 100;
+                ctx.beginPath();
+                for(var i = 0; i < n; i++) {
+                    var e = r * 0.03;
+                    var extra = i % 2 == 0 ? e : -e;
+                    var a = i / n * Math.PI * 2;
+                    ctx.lineTo(
+                        Math.cos(a) * (r + extra), 
+                        Math.sin(a) * (r + extra)
+                    );
+                };
+                ctx.closePath();
+            }
+
+            ctx.fillStyle = `rgb(${ node.hue.r }, ${ node.hue.g }, ${ node.hue.b })`;
+			console.log(`rgb(${ node.hue.r }, ${ node.hue.g }, ${ node.hue.b })`);
+			//ctx.fillStyle = "#00c8ff";
+			console.log(node.hue);
+            ctx.fill();
+			
+			ctx.lineWidth = 10;
+			ctx.strokeStyle = "rgba(108, 108, 108, 0.33)";
+			ctx.stroke();
+			ctx.restore();
+            
+		
+            if(node.nick && settings.skin) {
+                drawSkin(node);
+            }
+
+            ctx.save();
+            ctx.translate(node.x, node.y);
+
+            ctx.fillStyle = "white";
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "center";
+
+            var size = node.size;
+            var fontsize = size * 0.43;
+            do {
+                fontsize--;
+                ctx.font = fontsize + "px Arial";
+            } while(ctx.measureText(node.nick).width > size * 1.86)
+
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = size * 0.04;
+            ctx.strokeText(node.nick, 0, 0);
+            ctx.fillText(node.nick, 0, 0);
+            
+
+            if(settings.mass && node.nodeType == 0) {
+                ctx.font = fontsize * 0.6 + "px Arial";
+                ctx.lineWidth = size * 0.023;
+                ctx.strokeText(
+                    Math.floor(node.size * node.size / 100), 
+                    0, fontsize);
+                ctx.fillText(
+                    Math.floor(node.size * node.size / 100), 
+                    0, fontsize);
+            }
+
+            ctx.restore();
+        };
+
+        var skinArr = skins.split("\n");
+        function drawSkin(node) {
+           /* if(skinArr.indexOf(node.nick.toLowerCase()) == -1) {
+                return;
+            }*/
+
+            var r = node.size;
+            var skin = new Image();
+            skin.src = "https://agario-skins.net/skins/" + node.skin + ".png";
+
+            ctx.save();
+            ctx.translate(node.x, node.y);
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(skin, -r, -r, r * 2, r * 2);
+            ctx.restore();
+        };
+
+
+        function addBlob(arr) {
+            var blob = {
+                sendId: arr[0],
+                x: arr[1],
+                y: arr[2],
+                nick: arr[3],
+                size: arr[4],
+                hue: arr[5],
+                isAgitated: arr[6],
+                nodeType: arr[7],
+
+                newX: arr[1],
+                newY: arr[2],
+                newSize: arr[4],
+                skin: arr[8]
+            };
+            blobs.push(blob);
+        };
+
+
+        var blobs = [];
+        socket.on("init blobs", function(data) {
+            blobs = [];
+            data.forEach(function(arr) {
+                addBlob(arr);
+            });
+        });
+        socket.on("add blobs", function(data) {
+            data.forEach(function(arr) {
+                addBlob(arr);
+            });
+        });
+        socket.on("remove blobs", function(data) {
+            data.forEach(function(id) {
+                var index = blobs.findIndex(function(a) {
+                    return a.sendId == id;
+                });
+                blobs.splice(index, 1);
+            })
+        });
+        socket.on("move blobs", function(data) {
+            data.forEach(function(arr) {
+                var blob = blobs.find(function(a) {
+                    return a.sendId == arr[0];
+                });
+                if(blob) {
+                    blob.newX = arr[1];
+                    blob.newY = arr[2];
+                    blob.newSize = arr[3];
+                }
+            })
+        });
+
+
+
+        var translateX = 0;
+        var translateY = 0;
+        var zoom = 0.2;
+
+        var newTranslateX = 0;
+        var newTranslateY = 0;
+        var newZoom = 0.2;
+
+        socket.on("center and zoom", function(arr) {
+            newTranslateX = arr[0];
+            newTranslateY = arr[1];
+            newZoom = arr[2];
+        });
+
+        
+        socket.on("dead", function() {
+            joined = false;
+            overlay.style.display = "block";
+        });
+        socket.on("joined", function() {
+            joined = true;
+            overlay.style.display = "none";
+        });
+
+
+        
+
+        var eUI = document.getElementById("eject");
+        var sUI = document.getElementById("split");
+        function mobileUI() {   
+            eUI.style.display = "block";
+            sUI.style.display = "block";
+
+            var c = document.getElementsByClassName("container");
+            for(var i = 0; i < c.length; i++) {
+                var cc = c[i];
+                cc.style.display = "none";
+            };
+
+            document.getElementById("main").style.display = "block";
+            document.getElementById("mainContainer").style.width = "300px";
+            document.getElementById("mainContainer").style.margin = "10px auto";
+
+            eUI.onclick = function() {
+                var w = 87;
+                socket.emit("input keydown", w);
+            };
+            sUI.onclick = function() {
+                var space = 32;
+                socket.emit("input keydown", space);
+            };
+        };
+
+        if(width < 800) {
+            mobileUI();
+        }
+
+
+
+        
+
+        var leaders = [];
+        socket.on("leaders", function(data) {
+            leaders = data;
+        });
+
+        function gridPattern() {
+            var c = document.createElement("canvas");
+            c.width = 128;
+            c.height = 128;
+            c.ctx = c.getContext("2d");
+            c.ctx.fillStyle = "#000";
+            c.ctx.globalAlpha = 0.1;
+            c.ctx.fillRect(0, c.width/2, c.width, 5);
+            c.ctx.fillRect(c.width/2, 0, 5, c.width);
+            return ctx.createPattern(c, "repeat");
+        }; 
+
+        function lerp(start, end) {
+            if(Math.hypot(start - end) < 0) {
+                return end;
+            } else {
+                return start + (end - start) * 0.2;
+            }
+        };
+
+        function draw() {
+            ctx.fillStyle = "#f2fbff";
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save();
+
+            translateX = lerp(translateX, newTranslateX);
+            translateY = lerp(translateY, newTranslateY);
+            zoom = lerp(zoom, newZoom);
+
+            ctx.translate(-translateX, -translateY);
+            ctx.scale(zoom, zoom); 
+
+            ctx.fillStyle = gridPattern();
+            ctx.fillRect(
+                (translateX + width / 2) / zoom - 2500, 
+                (translateY + height / 2) / zoom - 2500,
+                5000, 5000);
+
+
+            blobs = blobs.sort(function(a, b) {
+                return a.size - b.size;
+            });
+
+            for(var i = 0; i < blobs.length; i++) {
+                var node = blobs[i];
+                node.x = lerp(node.x, node.newX);
+                node.y = lerp(node.y, node.newY);
+                node.size = lerp(node.size, node.newSize);
+                
+                drawNode(node);
+            };
+
+            ctx.restore();
+
+
+            var w = 160;
+            var p = 10;
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+            ctx.fillRect(width - w - p, p, w, 255);
+
+            ctx.fillStyle = "white";
+            ctx.textBaseline = "top";
+            ctx.textAlign = "center";
+
+            var tp = 20;
+
+            ctx.font = "24px Arial";
+            ctx.fillText("Leaderboard", width - w/2 - p, tp);
+
+
+            ctx.font = "17px Arial";
+            for(var i = 0; i < leaders.length; i++)  {
+                var l = leaders[i];
+                ctx.fillText(i + 1 + ". " + l, width - w/2 - p, 50 + i * tp);
+            };
+                
+            ctx.fillStyle = "white";
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "left";
+
+            requestAnimationFrame(draw);
+        };
+
+        draw();
+    </script>
+    <script>
+	
+var SplitInterval;
+var MacroInterval;
+var SplitDebounce = false;
+var MacroDebounce = false;
+$(document).on('keydown', function(input) {
+    //console.log("got keydown")
+    if (input.keyCode == 16) {
+        if (SplitDebounce) {
+            return;
+        }
+        SplitDebounce = true;
+        SplitInterval = setInterval(function() {
+            $("body").trigger($.Event("keydown", {
+                keyCode: 32
+            }));
+            $("body").trigger($.Event("keyup", {
+                keyCode: 32
+            }));
+        }, 0);
+    } else if (input.keyCode == 69) {
+  if (MacroDebounce) {
+            return;
+        }
+        MacroDebounce = true;
+        MacroInterval = setInterval(function() {
+            $("body").trigger($.Event("keydown", {
+                keyCode: 87
+            }));
+            $("body").trigger($.Event("keyup", {
+                keyCode: 87
+            }));
+        }, 0);
+ }
+})
+
+$(document).on('keyup', function(input) {
+    if (input.keyCode == 16) {
+        SplitDebounce = false;
+        clearInterval(SplitInterval);
+        return;
+    } else if (input.keyCode == 69) {
+        MacroDebounce = false;
+        clearInterval(MacroInterval);
+        return;
+    }
+})
+</script>
+</body>
+</html>
